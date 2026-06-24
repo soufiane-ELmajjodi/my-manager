@@ -1,8 +1,13 @@
 {
   "buildCommand": "cd app && npm install && npm run build",
   "outputDirectory": "app/dist",
-  "framework": "vite",
-  "rewrites" : [
+  "functions": {
+    "server/index.js": {
+      "runtime": "@vercel/node"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/server/index.js" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
