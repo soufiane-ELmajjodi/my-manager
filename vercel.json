@@ -3,7 +3,6 @@
   "outputDirectory": "app/dist",
   "functions": {
     "api/index.js": {
-      "runtime": "@vercel/node",
       "maxDuration": 10
     }
   },
