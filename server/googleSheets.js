@@ -13,11 +13,18 @@ class GoogleSheetsDB {
     async initialize() {
         if (this.initialized) return;
         try {
-            // Load credentials: individual env vars > JSON env var > file
+            // Load credentials: base64 > individual env vars > JSON > file
             let credentials;
-            if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
-                    const normalizeNewlines = (str) => (str || '').replace(/\\n/g, '\n');
-                    credentials = {
+            if (process.env.GOOGLE_CREDENTIALS_BASE64) {
+                try {
+                    const decoded = Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64').toString('utf-8');
+                    credentials = JSON.parse(decoded);
+                } catch (e) {
+                    throw new Error('GOOGLE_CREDENTIALS_BASE64 is not valid base64 JSON');
+                }
+            } else if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+                const normalizeNewlines = (str) => (str || '').replace(/\\n/g, '\n');
+                credentials = {
                     type: process.env.GOOGLE_TYPE || 'service_account',
                     project_id: process.env.GOOGLE_PROJECT_ID,
                     private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
@@ -39,7 +46,7 @@ class GoogleSheetsDB {
                     credentials = require(credentialsPath);
                 } catch (e) {
                     throw new Error(
-                        'No Google credentials found. Set individual GOOGLE_* env vars ' +
+                        'No Google credentials found. Set GOOGLE_CREDENTIALS_BASE64 env var ' +
                         '(on Vercel) or place credentials.json in the server/ directory (local).'
                     );
                 }
