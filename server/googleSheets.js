@@ -1,5 +1,6 @@
 const { google } = require('googleapis');
 const path = require('path');
+const crypto = require('crypto');
 require('dotenv').config();
 
 class GoogleSheetsDB {
@@ -52,14 +53,43 @@ class GoogleSheetsDB {
                 }
             }
 
-            // Create auth client
-            const auth = new google.auth.GoogleAuth({
-                credentials,
-                scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+            // Manually sign JWT and exchange for access token
+            // (bypasses google-auth-library's JWT construction which has
+            // issues with certain Node.js versions on Vercel)
+            const keyObject = crypto.createPrivateKey(credentials.private_key);
+            const now = Math.floor(Date.now() / 1000);
+            const header = { alg: 'RS256', typ: 'JWT', kid: credentials.private_key_id };
+            const payload = {
+                iss: credentials.client_email,
+                scope: 'https://www.googleapis.com/auth/spreadsheets',
+                aud: credentials.token_uri || 'https://oauth2.googleapis.com/token',
+                iat: now,
+                exp: now + 3600,
+            };
+
+            const encHeader = Buffer.from(JSON.stringify(header)).toString('base64url');
+            const encPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
+            const signingInput = `${encHeader}.${encPayload}`;
+            const signature = crypto.sign('RSA-SHA256', Buffer.from(signingInput), keyObject);
+            const assertion = `${signingInput}.${signature.toString('base64url')}`;
+
+            const resp = await fetch(credentials.token_uri || 'https://oauth2.googleapis.com/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+                    assertion,
+                }),
             });
 
-            const authClient = await auth.getClient();
-            this.sheets = google.sheets({ version: 'v4', auth: authClient });
+            const tokenData = await resp.json();
+            if (!tokenData.access_token) {
+                throw new Error(tokenData.error_description || tokenData.error || 'Failed to get access token');
+            }
+
+            const auth = new google.auth.OAuth2();
+            auth.setCredentials({ access_token: tokenData.access_token });
+            this.sheets = google.sheets({ version: 'v4', auth });
 
             // Verify connection and initialize headers if needed
             await this.initializeHeaders();
