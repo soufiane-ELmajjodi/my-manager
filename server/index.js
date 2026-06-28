@@ -51,6 +51,11 @@ app.get('/api/debug/auth', async (req, res) => {
                     { algorithm: 'RS256' }
                 );
 
+                // Show decoded JWT header and payload for debugging
+                const parts = assertion.split('.');
+                const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
+                const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
+
                 const resp = await fetch(credentials.token_uri || 'https://oauth2.googleapis.com/token', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -61,7 +66,13 @@ app.get('/api/debug/auth', async (req, res) => {
                 if (data.access_token) {
                     return res.json({ status: 'ok', method: 'manual-jwt' });
                 } else {
-                    return res.json({ status: 'error', step: 'manual-jwt', error: data.error_description || data.error, raw: data });
+                    return res.json({
+                        status: 'error', step: 'manual-jwt',
+                        error: data.error_description || data.error,
+                        jwt_header: header,
+                        jwt_payload: { iss: payload.iss, aud: payload.aud, scope: payload.scope },
+                        node_version: process.version
+                    });
                 }
             } catch (manualErr) {
                 return res.json({ status: 'error', step: 'manual-jwt-exception', error: manualErr.message, lib_error: libErr.message });
