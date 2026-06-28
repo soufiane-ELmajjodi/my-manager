@@ -23,6 +23,7 @@ const path = require('path');
 
 app.get('/api/debug/auth', async (req, res) => {
     const jwt = require('jsonwebtoken');
+    const crypto = require('crypto');
     try {
         const credsPath = process.env.GOOGLE_CREDENTIALS_PATH || path.join(__dirname, 'credentials.json');
         let credentials;
@@ -32,26 +33,35 @@ app.get('/api/debug/auth', async (req, res) => {
             return res.json({ status: 'error', step: 'load', dirname: __dirname, credsPath, error: e.message });
         }
 
-        // Test 1: google-auth-library approach
+        // Normalize private key: ensure PKCS#8 PEM format
+        let privateKey;
         try {
+            const keyObject = crypto.createPrivateKey(credentials.private_key);
+            privateKey = keyObject.export({ type: 'pkcs8', format: 'pem' });
+        } catch (e) {
+            return res.json({ status: 'error', step: 'key-parse', error: e.message });
+        }
+
+        // Test 1: google-auth-library with normalized key
+        try {
+            const normalizedCreds = { ...credentials, private_key: privateKey };
             const auth = new google.auth.GoogleAuth({
-                credentials,
+                credentials: normalizedCreds,
                 scopes: ['https://www.googleapis.com/auth/spreadsheets'],
             });
             const client = await auth.getClient();
             const token = await client.getAccessToken();
             return res.json({ status: 'ok', method: 'google-auth-library', has_token: !!token.token });
         } catch (libErr) {
-            // Test 2: manual JWT approach using jsonwebtoken
+            // Test 2: manual JWT with normalized key
             try {
                 const now = Math.floor(Date.now() / 1000);
                 const assertion = jwt.sign(
                     { iss: credentials.client_email, scope: 'https://www.googleapis.com/auth/spreadsheets', aud: credentials.token_uri || 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 },
-                    credentials.private_key,
-                    { algorithm: 'RS256' }
+                    privateKey,
+                    { algorithm: 'RS256', header: { kid: credentials.private_key_id } }
                 );
 
-                // Show decoded JWT header and payload for debugging
                 const parts = assertion.split('.');
                 const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
                 const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
