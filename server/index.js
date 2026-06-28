@@ -22,7 +22,6 @@ const { google } = require('googleapis');
 const path = require('path');
 
 app.get('/api/debug/auth', async (req, res) => {
-    const jwt = require('jsonwebtoken');
     const crypto = require('crypto');
     try {
         const credsPath = process.env.GOOGLE_CREDENTIALS_PATH || path.join(__dirname, 'credentials.json');
@@ -30,63 +29,46 @@ app.get('/api/debug/auth', async (req, res) => {
         try {
             credentials = require(credsPath);
         } catch (e) {
-            return res.json({ status: 'error', step: 'load', dirname: __dirname, credsPath, error: e.message });
+            return res.json({ status: 'error', step: 'load', error: e.message });
         }
 
-        // Normalize private key: ensure PKCS#8 PEM format
-        let privateKey;
+        // Test: sign JWT using raw crypto (no libraries)
         try {
             const keyObject = crypto.createPrivateKey(credentials.private_key);
-            privateKey = keyObject.export({ type: 'pkcs8', format: 'pem' });
-        } catch (e) {
-            return res.json({ status: 'error', step: 'key-parse', error: e.message });
-        }
 
-        // Test 1: google-auth-library with normalized key
-        try {
-            const normalizedCreds = { ...credentials, private_key: privateKey };
-            const auth = new google.auth.GoogleAuth({
-                credentials: normalizedCreds,
-                scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+            const now = Math.floor(Date.now() / 1000);
+            const header = { alg: 'RS256', typ: 'JWT', kid: credentials.private_key_id };
+            const payload = { iss: credentials.client_email, scope: 'https://www.googleapis.com/auth/spreadsheets', aud: credentials.token_uri || 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 };
+
+            const encHeader = Buffer.from(JSON.stringify(header)).toString('base64url');
+            const encPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
+            const signingInput = `${encHeader}.${encPayload}`;
+
+            const signature = crypto.sign('RSA-SHA256', Buffer.from(signingInput), keyObject);
+            const assertion = `${signingInput}.${signature.toString('base64url')}`;
+
+            const resp = await fetch(credentials.token_uri || 'https://oauth2.googleapis.com/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
             });
-            const client = await auth.getClient();
-            const token = await client.getAccessToken();
-            return res.json({ status: 'ok', method: 'google-auth-library', has_token: !!token.token });
-        } catch (libErr) {
-            // Test 2: manual JWT with normalized key
-            try {
-                const now = Math.floor(Date.now() / 1000);
-                const assertion = jwt.sign(
-                    { iss: credentials.client_email, scope: 'https://www.googleapis.com/auth/spreadsheets', aud: credentials.token_uri || 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 },
-                    privateKey,
-                    { algorithm: 'RS256', header: { kid: credentials.private_key_id } }
-                );
+            const data = await resp.json();
 
-                const parts = assertion.split('.');
-                const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
-                const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
-
-                const resp = await fetch(credentials.token_uri || 'https://oauth2.googleapis.com/token', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
-                });
-                const data = await resp.json();
-
-                if (data.access_token) {
-                    return res.json({ status: 'ok', method: 'manual-jwt' });
-                } else {
-                    return res.json({
-                        status: 'error', step: 'manual-jwt',
-                        error: data.error_description || data.error,
-                        jwt_header: header,
-                        jwt_payload: { iss: payload.iss, aud: payload.aud, scope: payload.scope },
-                        node_version: process.version
-                    });
-                }
-            } catch (manualErr) {
-                return res.json({ status: 'error', step: 'manual-jwt-exception', error: manualErr.message, lib_error: libErr.message });
+            if (data.access_token) {
+                return res.json({ status: 'ok', method: 'raw-crypto' });
             }
+            // Hash comparison: check local vs Vercel digest
+            const localSig = crypto.sign('RSA-SHA256', Buffer.from(signingInput), keyObject);
+            const match = signature.equals(localSig);
+            return res.json({
+                status: 'error', error: data.error_description || data.error,
+                node_version: process.version,
+                signature_bytes: signature.length,
+                local_match: match,
+                actual_sig_start: signature.toString('base64').substring(0, 20)
+            });
+        } catch (e) {
+            return res.json({ status: 'error', step: 'sign', error: e.message });
         }
     } catch (err) {
         res.json({ status: 'error', step: 'unknown', error: err.message });
