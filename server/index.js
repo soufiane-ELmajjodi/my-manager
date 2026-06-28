@@ -22,6 +22,7 @@ const { google } = require('googleapis');
 const path = require('path');
 
 app.get('/api/debug/auth', async (req, res) => {
+    const jwt = require('jsonwebtoken');
     try {
         const credsPath = process.env.GOOGLE_CREDENTIALS_PATH || path.join(__dirname, 'credentials.json');
         let credentials;
@@ -31,22 +32,40 @@ app.get('/api/debug/auth', async (req, res) => {
             return res.json({ status: 'error', step: 'load', dirname: __dirname, credsPath, error: e.message });
         }
 
-        const auth = new google.auth.GoogleAuth({
-            credentials,
-            scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-        });
-        let client;
+        // Test 1: google-auth-library approach
         try {
-            client = await auth.getClient();
-        } catch (e) {
-            return res.json({ status: 'error', step: 'getClient', error: e.message });
-        }
-
-        try {
+            const auth = new google.auth.GoogleAuth({
+                credentials,
+                scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+            });
+            const client = await auth.getClient();
             const token = await client.getAccessToken();
-            return res.json({ status: 'ok', has_token: !!token.token });
-        } catch (e) {
-            return res.json({ status: 'error', step: 'getAccessToken', error: e.message });
+            return res.json({ status: 'ok', method: 'google-auth-library', has_token: !!token.token });
+        } catch (libErr) {
+            // Test 2: manual JWT approach using jsonwebtoken
+            try {
+                const now = Math.floor(Date.now() / 1000);
+                const assertion = jwt.sign(
+                    { iss: credentials.client_email, scope: 'https://www.googleapis.com/auth/spreadsheets', aud: credentials.token_uri || 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 },
+                    credentials.private_key,
+                    { algorithm: 'RS256' }
+                );
+
+                const resp = await fetch(credentials.token_uri || 'https://oauth2.googleapis.com/token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
+                });
+                const data = await resp.json();
+
+                if (data.access_token) {
+                    return res.json({ status: 'ok', method: 'manual-jwt' });
+                } else {
+                    return res.json({ status: 'error', step: 'manual-jwt', error: data.error_description || data.error, raw: data });
+                }
+            } catch (manualErr) {
+                return res.json({ status: 'error', step: 'manual-jwt-exception', error: manualErr.message, lib_error: libErr.message });
+            }
         }
     } catch (err) {
         res.json({ status: 'error', step: 'unknown', error: err.message });
