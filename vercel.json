@@ -2,12 +2,7 @@
   "installCommand": "npm install && cd app && npm install",
   "buildCommand": "cd app && npm run build",
   "outputDirectory": "app/dist",
-  "functions": {
-    "api/index.js": {
-      "runtime": "@vercel/node@3",
-      "maxDuration": 10
-    }
-  },
+
   "headers": [
     {
       "source": "/api/(.*)",
