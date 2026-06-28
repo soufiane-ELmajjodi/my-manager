@@ -1,6 +1,5 @@
 const { google } = require('googleapis');
 const path = require('path');
-const crypto = require('crypto');
 require('dotenv').config();
 
 class GoogleSheetsDB {
@@ -51,14 +50,6 @@ class GoogleSheetsDB {
                         '(on Vercel) or place credentials.json in the server/ directory (local).'
                     );
                 }
-            }
-
-            // Normalize private key for Node.js v24+ compatibility
-            try {
-                const keyObject = crypto.createPrivateKey(credentials.private_key);
-                credentials.private_key = keyObject.export({ type: 'pkcs8', format: 'pem' });
-            } catch (e) {
-                throw new Error('Invalid private key: ' + e.message);
             }
 
             // Create auth client
