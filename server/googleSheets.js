@@ -13,9 +13,20 @@ class GoogleSheetsDB {
     async initialize() {
         if (this.initialized) return;
         try {
-            // Load credentials from env var (Vercel) or file (local)
+            // Load credentials: individual env vars > JSON env var > file
             let credentials;
-            if (process.env.GOOGLE_CREDENTIALS_JSON) {
+            if (process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+                credentials = {
+                    type: process.env.GOOGLE_TYPE || 'service_account',
+                    project_id: process.env.GOOGLE_PROJECT_ID,
+                    private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
+                    private_key: process.env.GOOGLE_PRIVATE_KEY,
+                    client_email: process.env.GOOGLE_CLIENT_EMAIL,
+                    client_id: process.env.GOOGLE_CLIENT_ID,
+                    auth_uri: process.env.GOOGLE_AUTH_URI || 'https://accounts.google.com/o/oauth2/auth',
+                    token_uri: process.env.GOOGLE_TOKEN_URI || 'https://oauth2.googleapis.com/token',
+                };
+            } else if (process.env.GOOGLE_CREDENTIALS_JSON) {
                 try {
                     credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
                 } catch (e) {
@@ -27,7 +38,7 @@ class GoogleSheetsDB {
                     credentials = require(credentialsPath);
                 } catch (e) {
                     throw new Error(
-                        'No Google credentials found. Set GOOGLE_CREDENTIALS_JSON env var ' +
+                        'No Google credentials found. Set individual GOOGLE_* env vars ' +
                         '(on Vercel) or place credentials.json in the server/ directory (local).'
                     );
                 }
