@@ -44,6 +44,10 @@ app.get('/api/debug/auth', async (req, res) => {
             const encPayload = Buffer.from(JSON.stringify(payload)).toString('base64url');
             const signingInput = `${encHeader}.${encPayload}`;
 
+            const pubKey = crypto.createPublicKey(keyObject);
+            const pubDer = pubKey.export({ type: 'spki', format: 'der' });
+            const pubFingerprint = crypto.createHash('sha256').update(pubDer).digest('hex');
+
             const signature = crypto.sign('RSA-SHA256', Buffer.from(signingInput), keyObject);
             const assertion = `${signingInput}.${signature.toString('base64url')}`;
 
@@ -59,13 +63,11 @@ app.get('/api/debug/auth', async (req, res) => {
             }
             // Hash comparison: check local vs Vercel digest
             const localSig = crypto.sign('RSA-SHA256', Buffer.from(signingInput), keyObject);
-            const match = signature.equals(localSig);
             return res.json({
                 status: 'error', error: data.error_description || data.error,
                 node_version: process.version,
-                signature_bytes: signature.length,
-                local_match: match,
-                actual_sig_start: signature.toString('base64').substring(0, 20)
+                pub_fingerprint: pubFingerprint.substring(0, 16),
+                expected_key_id: credentials.private_key_id
             });
         } catch (e) {
             return res.json({ status: 'error', step: 'sign', error: e.message });
