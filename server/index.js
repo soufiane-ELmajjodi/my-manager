@@ -17,6 +17,42 @@ const clientsRoutes = require("./routes/clients");
 app.use("/api/auth", authRoutes);
 app.use("/api/clients", clientsRoutes);
 
+// Debug: test auth independently
+const { google } = require('googleapis');
+const path = require('path');
+
+app.get('/api/debug/auth', async (req, res) => {
+    try {
+        const credsPath = process.env.GOOGLE_CREDENTIALS_PATH || path.join(__dirname, 'credentials.json');
+        let credentials;
+        try {
+            credentials = require(credsPath);
+        } catch (e) {
+            return res.json({ status: 'error', step: 'load', dirname: __dirname, credsPath, error: e.message });
+        }
+
+        const auth = new google.auth.GoogleAuth({
+            credentials,
+            scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+        });
+        let client;
+        try {
+            client = await auth.getClient();
+        } catch (e) {
+            return res.json({ status: 'error', step: 'getClient', error: e.message });
+        }
+
+        try {
+            const token = await client.getAccessToken();
+            return res.json({ status: 'ok', has_token: !!token.token });
+        } catch (e) {
+            return res.json({ status: 'error', step: 'getAccessToken', error: e.message });
+        }
+    } catch (err) {
+        res.json({ status: 'error', step: 'unknown', error: err.message });
+    }
+});
+
 // Health check route
 app.get('/api/health', async (req, res) => {
     try {
@@ -28,8 +64,6 @@ app.get('/api/health', async (req, res) => {
             sheet_id: googleSheetsDB.spreadsheetId
         });
     } catch (err) {
-        const email = process.env.GOOGLE_CLIENT_EMAIL || process.env.GOOGLE_CREDENTIALS_JSON
-            ? 'from JSON' : process.env.GOOGLE_CREDENTIALS_BASE64 ? 'from base64' : 'from file';
         res.status(503).json({
             status: 'error',
             database: 'Google Sheets',
