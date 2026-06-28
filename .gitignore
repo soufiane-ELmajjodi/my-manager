@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+credentials.json
+credentials copy.json
+*.local
+zrok.tar.gz

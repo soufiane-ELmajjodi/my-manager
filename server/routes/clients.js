@@ -2,6 +2,16 @@ const express = require("express");
 const router = express.Router();
 const googleSheetsDB = require("../googleSheets");
 
+// Ensure Google Sheets is initialized before handling requests
+router.use(async (req, res, next) => {
+    try {
+        await googleSheetsDB.ensureInitialized();
+        next();
+    } catch (err) {
+        res.status(503).json({ error: 'Database not available', details: err.message });
+    }
+});
+
 // GET all clients
 router.get("/", async (req, res) => {
     try {

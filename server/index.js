@@ -10,12 +10,6 @@ app.use(express.json());
 
 const googleSheetsDB = require('./googleSheets');
 
-// Initialize Google Sheets connection
-googleSheetsDB.initialize().catch(err => {
-    console.error('Failed to initialize Google Sheets:', err.message);
-    process.exit(1);
-});
-
 // Routes
 const authRoutes = require("./routes/auth");
 const clientsRoutes = require("./routes/clients");
@@ -24,12 +18,22 @@ app.use("/api/auth", authRoutes);
 app.use("/api/clients", clientsRoutes);
 
 // Health check route
-app.get('/api/health', (req, res) => {
-    res.json({
-        status: 'ok',
-        database: 'Google Sheets',
-        initialized: googleSheetsDB.initialized
-    });
+app.get('/api/health', async (req, res) => {
+    try {
+        await googleSheetsDB.ensureInitialized();
+        res.json({
+            status: 'ok',
+            database: 'Google Sheets',
+            initialized: googleSheetsDB.initialized
+        });
+    } catch (err) {
+        res.status(503).json({
+            status: 'error',
+            database: 'Google Sheets',
+            initialized: false,
+            error: err.message
+        });
+    }
 });
 
 module.exports = app;

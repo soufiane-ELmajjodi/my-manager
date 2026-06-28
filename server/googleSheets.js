@@ -11,10 +11,16 @@ class GoogleSheetsDB {
     }
 
     async initialize() {
+        if (this.initialized) return;
         try {
-            // Load credentials from file
-            const credentialsPath = process.env.GOOGLE_CREDENTIALS_PATH || path.join(__dirname, 'credentials.json');
-            const credentials = require(credentialsPath);
+            // Load credentials from env var (Vercel) or file (local)
+            let credentials;
+            if (process.env.GOOGLE_CREDENTIALS_JSON) {
+                credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+            } else {
+                const credentialsPath = process.env.GOOGLE_CREDENTIALS_PATH || path.join(__dirname, 'credentials.json');
+                credentials = require(credentialsPath);
+            }
 
             // Create auth client
             const auth = new google.auth.GoogleAuth({
@@ -49,6 +55,12 @@ class GoogleSheetsDB {
                 }
             }
             throw error;
+        }
+    }
+
+    async ensureInitialized() {
+        if (!this.initialized) {
+            await this.initialize();
         }
     }
 
