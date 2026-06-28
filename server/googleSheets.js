@@ -16,10 +16,21 @@ class GoogleSheetsDB {
             // Load credentials from env var (Vercel) or file (local)
             let credentials;
             if (process.env.GOOGLE_CREDENTIALS_JSON) {
-                credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+                try {
+                    credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+                } catch (e) {
+                    throw new Error('GOOGLE_CREDENTIALS_JSON is not valid JSON');
+                }
             } else {
                 const credentialsPath = process.env.GOOGLE_CREDENTIALS_PATH || path.join(__dirname, 'credentials.json');
-                credentials = require(credentialsPath);
+                try {
+                    credentials = require(credentialsPath);
+                } catch (e) {
+                    throw new Error(
+                        'No Google credentials found. Set GOOGLE_CREDENTIALS_JSON env var ' +
+                        '(on Vercel) or place credentials.json in the server/ directory (local).'
+                    );
+                }
             }
 
             // Create auth client
