@@ -24,14 +24,21 @@ app.get('/api/health', async (req, res) => {
         res.json({
             status: 'ok',
             database: 'Google Sheets',
-            initialized: googleSheetsDB.initialized
+            initialized: googleSheetsDB.initialized,
+            sheet_id: googleSheetsDB.spreadsheetId
         });
     } catch (err) {
+        const email = process.env.GOOGLE_CLIENT_EMAIL || process.env.GOOGLE_CREDENTIALS_JSON
+            ? 'from JSON' : process.env.GOOGLE_CREDENTIALS_BASE64 ? 'from base64' : 'from file';
         res.status(503).json({
             status: 'error',
             database: 'Google Sheets',
             initialized: false,
-            error: err.message
+            error: err.message,
+            credentials_method: process.env.GOOGLE_CREDENTIALS_BASE64
+                ? 'base64' : process.env.GOOGLE_CLIENT_EMAIL
+                ? 'individual' : process.env.GOOGLE_CREDENTIALS_JSON
+                ? 'json' : 'file'
         });
     }
 });
